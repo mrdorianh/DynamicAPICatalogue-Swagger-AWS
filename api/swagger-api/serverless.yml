@@ -1,0 +1,151 @@
+service: api-swagger
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  region: us-west-1
+  runtime: nodejs14.x
+  timeout: 3
+  memorySize: 128
+  stage: ${opt:stage, 'dev'}
+  endpointType: regional
+  apiGateway:
+    resourcePolicy:
+      - Effect: Allow
+        Principal: '*'
+        Action: execute-api:Invoke
+        Resource:
+          - execute-api:/*/*/*
+      - Effect: Deny
+        Principal: '*'
+        Action: execute-api:Invoke
+        Resource:
+          - execute-api:/*/*/*
+        Condition:
+          NotIpAddress:
+            aws:SourceIp:
+              - '${ssm:/vpn_ip}'
+  vpc:
+    securityGroupIds:
+      - ${ssm:/${opt:stage, 'dev'}/vpc_sg}
+    subnetIds:
+      - ${ssm:/${opt:stage, 'dev'}/vpc_sub_1}
+      - ${ssm:/${opt:stage, 'dev'}/vpc_sub_2}
+  environment:
+    API_KEY: ${ssm:/${opt:stage, 'dev'}/api_key}
+    API_SECRET: ${ssm:/${opt:stage, 'dev'}/api_secret}
+
+# you can add packaging information here
+package:
+  patterns:
+    - node_modules/**
+
+plugins:
+  - serverless-aws-documentation
+
+custom:
+  # You must have the documentation object
+  documentation:
+    # this is general info about the API
+    api:
+      info:
+        version: '1'
+        title: api-swagger
+        description: Provides required data to Swagger UI
+        # termsOfService: https://www.google.com
+        contact:
+          name: Dorian Hryniewicki
+          # url: https://www.serverless.com/framework
+          email: mrdorianh@gmail.com
+        # license:
+        #   name: The license
+        #   url: https://www.github.com
+
+    # Describe all the models that we use
+    models:
+      -
+        name: UrlsArray
+        contentType: "application/json"
+        schema:
+          type: array
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+              name:
+                type: string
+      -
+        name: SwaggerJson
+        contentType: "application/json"
+        schema:
+          type: object
+      -
+        name: ErrorMessage
+        contentType: "text/plain"
+        schema:
+          type: string
+
+  commonModelSchemaFragments:
+    # defining common fragments means you can reference them with a single line
+    MethodResponse400Json:
+      statusCode: '400'
+      responseHeaders:
+        -
+          name: Access-Control-Allow-Origin
+        -
+          name: Content-Type
+        -
+          name: Access-Control-Allow-Credentials
+      responseModels:
+        "text/plain": ErrorMessage
+
+functions:
+  get-swagger:
+    handler: get-swagger.handler
+    description: If no query params are specified, returns {UrlsArray}. Otherwise, returns relative {SwaggerJson}.
+    events:
+      - http:
+          path: swagger
+          method: get
+          cors:
+            origins: '*.s3-website-us-gov-west-1.amazonaws.com'
+          documentation:
+            summary: Serve Swagger UI
+            description:
+              If no query params are specified, returns {UrlsArray}. Otherwise, returns relative {SwaggerJson}.
+            queryParams:
+              -
+                name: id
+                description: The API ID reference to export swagger. Alternatively, do not include any query parameters to fetch model-UrlsArray.  
+                # required: true
+              -
+                name: stage
+                description: Deployment stage of the API you want to export swagger. Default:'dev'. Alternatively, do not include any query parameters to fetch model-UrlsArray.
+            methodResponses:
+              -
+                statusCode: '200'
+                responseHeaders:
+                  -
+                    name: Access-Control-Allow-Origin
+                  -
+                    name: Content-Type
+                  -
+                    name: Access-Control-Allow-Credentials
+                responseModels:
+                  "application/json": SwaggerJson
+              -
+                statusCode: '206'
+                responseHeaders:
+                  -
+                    name: Access-Control-Allow-Origin
+                  -
+                    name: Content-Type
+                  -
+                    name: Access-Control-Allow-Credentials
+                responseModels:
+                  "application/json": UrlsArray
+              -  
+                ${self:custom.commonModelSchemaFragments.MethodResponse400Json}
+            

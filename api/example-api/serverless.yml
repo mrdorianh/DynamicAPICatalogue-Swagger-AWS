@@ -1,0 +1,127 @@
+service: api-service
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  region: us-west-1
+  runtime: nodejs14.x
+  timeout: 3
+  memorySize: 128
+  stage: ${opt:stage, 'dev'}
+  endpointType: regional
+  apiGateway:
+    resourcePolicy:
+      - Effect: Allow
+        Principal: '*'
+        Action: execute-api:Invoke
+        Resource:
+          - execute-api:/*/*/*
+      - Effect: Deny
+        Principal: '*'
+        Action: execute-api:Invoke
+        Resource:
+          - execute-api:/*/*/*
+        Condition:
+          NotIpAddress:
+            aws:SourceIp:
+              - '${ssm:/vpn_ip}'
+  vpc:
+    securityGroupIds:
+      - ${ssm:/${opt:stage, 'dev'}/vpc_sg}
+    subnetIds:
+      - ${ssm:/${opt:stage, 'dev'}/vpc_sub_1}
+      - ${ssm:/${opt:stage, 'dev'}/vpc_sub_2}
+  environment:
+    DB_HOST: ${ssm:/${opt:stage, 'dev'}/aurora_host}
+    DB_NAME: ${ssm:/${opt:stage, 'dev'}/aurora_dbname}
+    DB_USER: ${ssm:/${opt:stage, 'dev'}/aurora_user}
+    DB_PW: ${ssm:/${opt:stage, 'dev'}/aurora_pw}
+  layers:
+    - ${self:custom.commonLayerARN}
+
+# you can add packaging information here
+package:
+  individually: true
+  exclude:
+    - ./** # exclude all files and folders (including node modules since we are using layers)
+  include:
+    - index.js # Include only the handler file
+    - models/** # Include all files in models folder
+
+plugins:
+  - serverless-aws-documentation
+
+functions:
+  myLambda:
+    handler: index.handler
+    description: Retrieve all entries from given resource
+    events:
+      - http:
+          path: api/{model}
+          method: get
+          cors:
+            origins: ${ssm:/${opt:stage, 'int'}/cors_origin}
+          documentation:
+            summary: Retrieve all entries from given resource
+            description:
+              Retrieve all entries from given resource
+            pathParams:
+              - name: model
+                description: Input model table name.
+            methodResponses:
+              -
+                statusCode: '200'
+                responseHeaders:
+                  - name: Access-Control-Allow-Origin
+                  - name: Access-Control-Allow-Credentials
+                responseModels:
+                  "application/json": ResponseModelsArray
+              -
+                ${self:custom.commonModelSchemaFragments.MethodResponse400Json}
+
+
+custom:
+  commonLayerARN:
+    Fn::Join:
+      - ":"
+      - - arn 
+        - aws
+        - lambda # Service
+        - Ref: AWS::Region # Region
+        - Ref: AWS::AccountId # Account ID
+        - layer # Layer type
+        - layer-service-${sls:stage}-myLayer # Layer name
+        - 1 # Layer version
+  # You must have the documentation object
+  documentation:
+    # this is general info about the API
+    api:
+      info:
+        version: '1'
+        title: api title
+        description: API description
+        # termsOfService: https://www.google.com
+        contact:
+          name: Dorian Hryniewicki
+          # url: https://www.serverless.com/framework
+          email: your-email@gmail.com
+        # license:
+        #   name: The license
+        #   url: https://www.github.com
+    models:
+      - name: ErrorMessageString
+          contentType: "application/json"
+          schema:
+            type: string
+  commonModelSchemaFragments:
+    # defining common fragments means you can reference them with a single line
+    MethodResponse400Json:
+      statusCode: '400'
+      responseHeaders:
+        - name: Access-Control-Allow-Origin
+        - name: Content-Type
+        - name: Access-Control-Allow-Credentials
+      responseModels:
+        "application/json": ErrorMessageString
+        
