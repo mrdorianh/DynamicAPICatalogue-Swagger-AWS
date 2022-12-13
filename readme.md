@@ -1,4 +1,4 @@
-# Dynamic Swagger Website
+# Dynamic API Catalogue - Swagger Website
 by [Dorian Hryniewicki](mrdorianh@gmail.com)
 
 ## Description
